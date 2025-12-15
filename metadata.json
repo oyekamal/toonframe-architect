@@ -1,0 +1,5 @@
+{
+  "name": "ToonFrame Architect",
+  "description": "An AI-powered storyboard engine that converts scripts into consistent, animated-style visual guides using Gemini 3 Pro Thinking Mode and Image Generation.",
+  "requestFramePermissions": []
+}
