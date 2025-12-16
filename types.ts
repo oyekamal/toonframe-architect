@@ -18,6 +18,9 @@ export interface Scene {
   imageAUrl?: string;
   imageBUrl?: string;
   isGeneratingImage?: boolean;
+  retryAttempt?: number;
+  imageAFailed?: boolean;
+  imageBFailed?: boolean;
 }
 
 export interface CharacterReferenceSheet {

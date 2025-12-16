@@ -84,13 +84,34 @@ const App: React.FC = () => {
       updateSceneInState(scene.id, { isGeneratingImage: true });
 
       try {
-        // Generate Image A
-        const imageA = await geminiService.generateSceneImage(scene.imageADescription, consistencyContext, size, charImage);
-        updateSceneInState(scene.id, { imageAUrl: imageA });
+        // Generate Image A with retry mechanism
+        let imageA: string | null = null;
+        updateSceneInState(scene.id, { retryAttempt: 1 });
+        try {
+          imageA = await geminiService.generateSceneImageWithRetry(scene.imageADescription, consistencyContext, size, charImage);
+          updateSceneInState(scene.id, { imageAUrl: imageA, imageAFailed: false });
+        } catch (imgError) {
+          console.error(`Failed to generate Image A for scene ${scene.id} after retries:`, imgError);
+          updateSceneInState(scene.id, { imageAFailed: true });
+        }
 
-        // Generate Image B
-        const imageB = await geminiService.generateSceneImage(scene.imageBDescription, consistencyContext, size, charImage);
-        updateSceneInState(scene.id, { imageBUrl: imageB });
+        // Generate Image B with retry mechanism
+        let imageB: string | null = null;
+        updateSceneInState(scene.id, { retryAttempt: 2 });
+        try {
+          imageB = await geminiService.generateSceneImageWithRetry(scene.imageBDescription, consistencyContext, size, charImage);
+          updateSceneInState(scene.id, { imageBUrl: imageB, imageBFailed: false });
+        } catch (imgError) {
+          console.error(`Failed to generate Image B for scene ${scene.id} after retries:`, imgError);
+          updateSceneInState(scene.id, { imageBFailed: true });
+        }
+
+        // If both images failed, show error but continue with other scenes
+        if (!imageA && !imageB) {
+          console.error(`Both images failed for scene ${scene.id}`);
+          // Don't stop the entire queue, just mark this scene as problematic
+        }
+
       } catch (err: any) {
         console.error(`Failed to generate images for scene ${scene.id}`, err);
         
@@ -100,6 +121,57 @@ const App: React.FC = () => {
           setHasApiKey(false); // Reset key state to force re-selection
           updateSceneInState(scene.id, { isGeneratingImage: false });
           return; // Stop the queue
+        }
+      } finally {
+        updateSceneInState(scene.id, { isGeneratingImage: false });
+      }
+    }
+
+    // After all scenes, check for any missing images and retry them once more
+    await retryMissingImages(data, size, charImage, consistencyContext);
+  };
+
+  const retryMissingImages = async (data: StoryboardData, size: ImageSize, charImage: string | null, consistencyContext: string) => {
+    const currentStoryboard = storyboardRef.current;
+    if (!currentStoryboard) return;
+
+    const scenesWithMissingImages = currentStoryboard.scenes.filter(scene => !scene.imageAUrl || !scene.imageBUrl);
+    
+    if (scenesWithMissingImages.length === 0) {
+      console.log('All images generated successfully!');
+      return;
+    }
+
+    console.log(`Retrying ${scenesWithMissingImages.length} scenes with missing images...`);
+
+    for (const scene of scenesWithMissingImages) {
+      updateSceneInState(scene.id, { isGeneratingImage: true });
+
+      try {
+        // Retry missing Image A
+        if (!scene.imageAUrl) {
+          updateSceneInState(scene.id, { retryAttempt: 3 });
+          try {
+            const imageA = await geminiService.generateSceneImageWithRetry(scene.imageADescription, consistencyContext, size, charImage, 2);
+            updateSceneInState(scene.id, { imageAUrl: imageA, imageAFailed: false });
+            console.log(`Successfully generated Image A for scene ${scene.id} on retry`);
+          } catch (error) {
+            console.error(`Final retry failed for Image A, scene ${scene.id}:`, error);
+            updateSceneInState(scene.id, { imageAFailed: true });
+          }
+        }
+
+        // Retry missing Image B
+        if (!scene.imageBUrl) {
+          updateSceneInState(scene.id, { retryAttempt: 4 });
+          try {
+            const imageB = await geminiService.generateSceneImageWithRetry(scene.imageBDescription, consistencyContext, size, charImage, 2);
+            updateSceneInState(scene.id, { imageBUrl: imageB, imageBFailed: false });
+            console.log(`Successfully generated Image B for scene ${scene.id} on retry`);
+          } catch (error) {
+            console.error(`Final retry failed for Image B, scene ${scene.id}:`, error);
+            updateSceneInState(scene.id, { imageBFailed: true });
+          }
         }
       } finally {
         updateSceneInState(scene.id, { isGeneratingImage: false });
@@ -128,7 +200,7 @@ const App: React.FC = () => {
       // Generate character reference sheet in background
       setIsGeneratingCharacterSheet(true);
       try {
-        const referenceSheet = await geminiService.createCharacterReferenceSheet(data.consistencyBible.characterVisuals);
+        const referenceSheet = await geminiService.createCharacterReferenceSheet(data.consistencyBible.characterVisuals, charImage);
         setStoryboard(prev => prev ? { ...prev, characterReferenceSheet: referenceSheet } : null);
       } catch (error) {
         console.error('Failed to generate character reference sheet:', error);

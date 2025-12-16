@@ -151,7 +151,7 @@ const geminiService = {
     throw new Error("No character image generated.");
   },
 
-  createCharacterReferenceSheet: async (description: string): Promise<{front: string, side: string, back: string}> => {
+  createCharacterReferenceSheet: async (description: string, originalCharacterImage: string): Promise<{front: string, side: string, back: string}> => {
     const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
     const views = {
@@ -170,44 +170,107 @@ const geminiService = {
       const fullPrompt = `
         ${VISUAL_STYLE_PROMPT}
 
-        Create a character reference sheet showing the character in ${viewDescription}.
-        Character should be drawn in a clean, consistent cartoon style on a plain white background.
-        Show the full character from head to toe.
+        Using the provided character image as a reference, create a character reference sheet showing the SAME character in ${viewDescription}.
+        
+        CRITICAL: Maintain EXACT same character appearance:
+        - Same clothing, colors, and style
+        - Same proportions and features
+        - Same cartoon art style
+        - Plain white background
+        - Full character from head to toe
         
         Character Description: ${description}
-        
         View: ${viewDescription.toUpperCase()}
         
-        Ensure consistent proportions, clothing, colors, and features as described.
+        The character in this new view must be identically recognizable as the same character in the reference image.
       `;
 
-      try {
-        const response = await ai.models.generateContent({
-          model: IMAGE_MODEL,
-          contents: fullPrompt,
-          config: {
-            imageConfig: {
-              imageSize: "1K",
-              aspectRatio: "1:1",
-            },
+      const contents = [
+        fullPrompt,
+        {
+          inlineData: {
+            mimeType: 'image/png',
+            data: originalCharacterImage.split(',')[1],
           },
-        });
+        },
+      ];
 
-        for (const candidate of response.candidates || []) {
-          for (const part of candidate.content.parts) {
-            if (part.inlineData && part.inlineData.data) {
-              results[viewName as keyof typeof results] = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-              break;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          const response = await ai.models.generateContent({
+            model: IMAGE_MODEL,
+            contents,
+            config: {
+              imageConfig: {
+                imageSize: "1K",
+                aspectRatio: "1:1",
+              },
+            },
+          });
+
+          for (const candidate of response.candidates || []) {
+            for (const part of candidate.content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                results[viewName as keyof typeof results] = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                break;
+              }
             }
           }
+          
+          if (results[viewName as keyof typeof results]) {
+            break; // Success, exit retry loop
+          }
+          
+        } catch (error) {
+          console.error(`Failed to generate ${viewName} view (attempt ${retryCount + 1}):`, error);
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          }
         }
-      } catch (error) {
-        console.error(`Failed to generate ${viewName} view:`, error);
-        results[viewName as keyof typeof results] = '';
       }
     }
 
     return results;
+  },
+
+  // Enhanced scene image generation with retry mechanism
+  generateSceneImageWithRetry: async (
+    description: string,
+    consistencyContext: string,
+    size: ImageSize,
+    characterImage?: string | null,
+    maxRetries: number = 3
+  ): Promise<string> => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await geminiService.generateSceneImage(
+          description,
+          consistencyContext,
+          size,
+          characterImage
+        );
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Scene image generation failed (attempt ${attempt}/${maxRetries}):`, error);
+        
+        if (attempt < maxRetries) {
+          // Wait before retry with exponential backoff
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+    
+    throw lastError || new Error('Scene image generation failed after all retries');
   }
 };
 

@@ -15,7 +15,13 @@ export const SceneCard: React.FC<SceneCardProps> = ({ scene }) => {
         <h3 className="font-bold text-slate-800">Scene {scene.id}: {scene.title}</h3>
         {scene.isGeneratingImage && (
            <span className="flex items-center gap-2 text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
-             <LoadingSpinner /> Generating Visuals...
+             <LoadingSpinner /> 
+             {scene.retryAttempt ? `Generating (Attempt ${scene.retryAttempt})...` : 'Generating Visuals...'}
+           </span>
+        )}
+        {(scene.imageAFailed || scene.imageBFailed) && !scene.isGeneratingImage && (
+           <span className="flex items-center gap-2 text-xs font-semibold text-red-600 bg-red-50 px-2 py-1 rounded-full">
+             ⚠️ Generation Issues
            </span>
         )}
       </div>
@@ -42,7 +48,15 @@ export const SceneCard: React.FC<SceneCardProps> = ({ scene }) => {
                    {scene.isGeneratingImage ? (
                      <div className="flex flex-col items-center gap-2 text-slate-400">
                        <LoadingSpinner />
-                       <span className="text-xs">Rendering...</span>
+                       <span className="text-xs">
+                         {scene.retryAttempt ? `Retry ${scene.retryAttempt}...` : 'Rendering...'}
+                       </span>
+                     </div>
+                   ) : scene.imageAFailed ? (
+                     <div className="flex flex-col items-center gap-2 text-red-500">
+                       <span className="text-2xl">⚠️</span>
+                       <span className="text-xs">Generation Failed</span>
+                       <span className="text-xs text-red-400">Will retry automatically</span>
                      </div>
                    ) : (
                      <span className="text-xs text-slate-400">Waiting for generation...</span>
@@ -69,7 +83,15 @@ export const SceneCard: React.FC<SceneCardProps> = ({ scene }) => {
                    {scene.isGeneratingImage ? (
                      <div className="flex flex-col items-center gap-2 text-slate-400">
                        <LoadingSpinner />
-                       <span className="text-xs">Rendering...</span>
+                       <span className="text-xs">
+                         {scene.retryAttempt ? `Retry ${scene.retryAttempt}...` : 'Rendering...'}
+                       </span>
+                     </div>
+                   ) : scene.imageBFailed ? (
+                     <div className="flex flex-col items-center gap-2 text-red-500">
+                       <span className="text-2xl">⚠️</span>
+                       <span className="text-xs">Generation Failed</span>
+                       <span className="text-xs text-red-400">Will retry automatically</span>
                      </div>
                    ) : (
                      <span className="text-xs text-slate-400">Waiting for generation...</span>
